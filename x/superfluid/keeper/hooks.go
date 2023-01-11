@@ -52,6 +52,17 @@ func (h Hooks) OnTokenLocked(ctx sdk.Context, address sdk.AccAddress, lockID uin
 }
 
 func (h Hooks) OnStartUnlock(ctx sdk.Context, address sdk.AccAddress, lockID uint64, amount sdk.Coins, lockDuration time.Duration, unlockTime time.Time) {
+	// lockID -> synthetic lock exists
+	//           --> call from BeginForceUnlock --> nothing to do
+	//        -> synthetic lock doesn't exist
+	//           -->  lock was not split --> no synthetic lock --> nothing to do
+	//           -->  lock was split
+	//                --> lock was split from a synthetic lock, TODO: how to determine --> create synthetic lock
+	//                --> lock was split from a lock without synthetic lock --> nothing to do
+
+	// TODO: how to determine if a lock was split from a synthetic lock
+	// synthetic lock count = 0 --> lock was not split from a synthetic lock
+	// synthetic lock count > 0 --> TODO: ?
 }
 
 func (h Hooks) OnTokenUnlocked(ctx sdk.Context, address sdk.AccAddress, lockID uint64, amount sdk.Coins, lockDuration time.Duration, unlockTime time.Time) {
