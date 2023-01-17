@@ -282,47 +282,52 @@ func (k Keeper) SuperfluidUnbondLock(ctx sdk.Context, underlyingLockId uint64, s
 // TODO: SuperfluidUndelegateAndUnbondLock
 // TODO: should behave same as undelegate and unbound if amount = locked amount
 // TODO: test multiple calls for same lock
-func (k Keeper) SuperfluidUndelegateAndUnbondLock(ctx sdk.Context, lockID uint64, sender string, amount sdk.Int) error {
+func (k Keeper) SuperfluidUndelegateAndUnbondLock(ctx sdk.Context, lockID uint64, sender string, amount sdk.Int) (uint64, error) {	
 	// Validate
 	lock, err := k.lk.GetLockByID(ctx, lockID)
 	if err != nil {
-		return err
+		return 0, err
 	}	
 
-	bondDenom := k.sk.BondDenom(ctx)
-	coins := sdk.Coins{sdk.NewCoin(bondDenom, amount)}
+	coins := sdk.Coins{sdk.NewCoin(lock.Coins[0].Denom, amount)}
+	if coins[0].IsZero() {
+		return 0, fmt.Errorf("amount to unlock must be greater than 0")
+	}
 	if lock.Coins[0].IsLT(coins[0]) {
-		return fmt.Errorf("requested amount to unlock exceeds locked tokens")
+		return 0, fmt.Errorf("requested amount to unlock exceeds locked tokens")
 	} 
 
 	// Get intermediary account before connection is deleted in superfluid undelegate
 	// TODO: check deleting unlocking lock?
 	intermediaryAcc, found := k.GetIntermediaryAccountFromLockId(ctx, lockID)
 	if !found {
-		return types.ErrNotSuperfluidUsedLockup
+		return 0, types.ErrNotSuperfluidUsedLockup
 	}
 
 	// Undelegate all
 	err = k.SuperfluidUndelegate(ctx, sender, lockID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// Unbond 
 	newLockID := lockID
 	newLockID, err = k.unbondLock(ctx, lockID, sender, coins)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
+	// fmt.Printf("HERE %v \n", lock)
+	// panic(fmt.Errorf("expected new lock id %v to = lock id %v", newLockID, lockID))
+	// fmt.Printf("HERE %v \n", coins)
+	// return nil
+
 	if lock.Coins[0].IsEqual(coins[0]) {
-		// assert newLockID == lockID
 		if newLockID != lockID {
 			panic(fmt.Errorf("expected new lock id %v to = lock id %v", newLockID, lockID))
 		}
-		return nil
+		return lock.ID, nil
 	} else {
-		// assert newLockID != lockID
 		if newLockID == lockID {
 			panic(fmt.Errorf("expected new lock id %v to != lock id %v", newLockID, lockID))
 		}
@@ -332,7 +337,7 @@ func (k Keeper) SuperfluidUndelegateAndUnbondLock(ctx sdk.Context, lockID uint64
 	synthdenom := unstakingSyntheticDenom(lock.Coins[0].Denom, intermediaryAcc.ValAddr)
 	err = k.lk.DeleteSyntheticLockup(ctx, lockID, synthdenom)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// Re-delegate remainder
@@ -344,13 +349,17 @@ func (k Keeper) SuperfluidUndelegateAndUnbondLock(ctx sdk.Context, lockID uint64
 	// }
 	err = k.SuperfluidDelegate(ctx, sender, lockID, intermediaryAcc.ValAddr)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// Create synthetic unlocking lock for newLockID
 	// TODO: use same intermediary acc?
 	// TODO: call before delegate?
-	return k.createSyntheticLockup(ctx, newLockID, intermediaryAcc, unlockingStatus)
+	err = k.createSyntheticLockup(ctx, newLockID, intermediaryAcc, unlockingStatus)
+	if err != nil {
+		return 0, err
+	}
+	return newLockID, nil
 }
 
 func (k Keeper) unbondLock(ctx sdk.Context, lockID uint64, sender string, coins sdk.Coins) (uint64, error) {

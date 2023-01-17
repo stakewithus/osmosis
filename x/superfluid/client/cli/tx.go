@@ -287,6 +287,8 @@ func NewCmdUnPoolWhitelistedPool() *cobra.Command {
 	})
 }
 
+// TODO:
+
 // NewCmdUpdateUnpoolWhitelistProposal defines the command to create a new update unpool whitelist proposal command.
 func NewCmdUpdateUnpoolWhitelistProposal() *cobra.Command {
 	cmd := &cobra.Command{
