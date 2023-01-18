@@ -311,8 +311,7 @@ func (k Keeper) SuperfluidUndelegateAndUnbondLock(ctx sdk.Context, lockID uint64
 	}
 
 	// Unbond 
-	newLockID := lockID
-	newLockID, err = k.unbondLock(ctx, lockID, sender, coins)
+	newLockID, err := k.unbondLock(ctx, lockID, sender, coins)
 	if err != nil {
 		return 0, err
 	}

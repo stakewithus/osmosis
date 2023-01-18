@@ -428,9 +428,9 @@ func (suite *KeeperTestSuite) TestSuperfluidUndelegateAndUnbondLock() {
 	for _, lock := range locks {
 		startTime := time.Now()
 		suite.Ctx = suite.Ctx.WithBlockTime(startTime)
-		// accAddr := suite.App.SuperfluidKeeper.GetLockIdIntermediaryAccountConnection(suite.Ctx, lock.ID)
-		// intermediaryAcc := suite.App.SuperfluidKeeper.GetIntermediaryAccount(suite.Ctx, accAddr)
-		// valAddr := intermediaryAcc.ValAddr
+		accAddr := suite.App.SuperfluidKeeper.GetLockIdIntermediaryAccountConnection(suite.Ctx, lock.ID)
+		intermediaryAcc := suite.App.SuperfluidKeeper.GetIntermediaryAccount(suite.Ctx, accAddr)
+		valAddr := intermediaryAcc.ValAddr
 
 		// test unlock amount = 0
 		unlockAmount := sdk.NewInt(0)
@@ -444,18 +444,40 @@ func (suite *KeeperTestSuite) TestSuperfluidUndelegateAndUnbondLock() {
 
 		// TODO: test intermediary account not found
 		// TODO: test already undelegated
-		// TODO: test lock is not split if unlock amount == lock amount
 
 		// test lock is split if unlock amount < lock amount
 		unbondLockStartTime := startTime.Add(time.Hour)
 		suite.Ctx = suite.Ctx.WithBlockTime(unbondLockStartTime)
 
 		unlockAmount = lock.Coins[0].Amount.Quo(sdk.NewInt(2))
-		_, err = suite.App.SuperfluidKeeper.SuperfluidUndelegateAndUnbondLock(suite.Ctx, lock.ID, lock.GetOwner(), unlockAmount)
+		newLockID, err := suite.App.SuperfluidKeeper.SuperfluidUndelegateAndUnbondLock(suite.Ctx, lock.ID, lock.GetOwner(), unlockAmount)
 		suite.Require().NoError(err)
+		suite.Require().NotEqual(newLockID, lock.ID)
+
+		// check unlocking lock
+		unbondingDuration := suite.App.StakingKeeper.GetParams(suite.Ctx).UnbondingTime
+		synthLock, err := suite.App.LockupKeeper.GetSyntheticLockup(suite.Ctx, newLockID, keeper.UnstakingSyntheticDenom(lock.Coins[0].Denom, valAddr))
+		suite.Require().NoError(err)
+		suite.Require().Equal(synthLock.UnderlyingLockId, newLockID)
+		suite.Require().Equal(synthLock.SynthDenom, keeper.UnstakingSyntheticDenom(lock.Coins[0].Denom, valAddr))
+		suite.Require().Equal(synthLock.EndTime, suite.Ctx.BlockTime().Add(unbondingDuration))
+
+		newLock, err := suite.App.LockupKeeper.GetLockByID(suite.Ctx, newLockID)
+		suite.Require().NoError(err)
+		suite.Require().True(newLock.IsUnlocking())
+		suite.Require().Equal(newLock.Coins[0].Amount, unlockAmount)
+
+		// check original lock
+		synthLock, err = suite.App.LockupKeeper.GetSyntheticLockup(suite.Ctx, lock.ID, keeper.StakingSyntheticDenom(lock.Coins[0].Denom, valAddr))
+		suite.Require().NoError(err)
+		suite.Require().Equal(synthLock.UnderlyingLockId, lock.ID)
+		suite.Require().Equal(synthLock.SynthDenom, keeper.StakingSyntheticDenom(lock.Coins[0].Denom, valAddr))
+		suite.Require().Equal(synthLock.EndTime, time.Time{})
 
 		// TODO: test check synthetic lockup for unlock is deleted (created in undelegate)
 		// TODO: test check de-delegate
+		// TODO: test unlock amount
+		// TODO: test locked amount
 
 		// TODO: update comment
 		// check that SuperfluidUnbondLock makes underlying lock start unlocking
@@ -466,38 +488,45 @@ func (suite *KeeperTestSuite) TestSuperfluidUndelegateAndUnbondLock() {
 		suite.Require().False(updatedLock.IsUnlocking())
 		suite.Require().Equal(updatedLock.Coins[0].Amount, lock.Coins[0].Amount.Sub(unlockAmount))
 
-		// // check if finsihed unlocking synth lock did not increase balance
-		// balances = suite.App.BankKeeper.GetAllBalances(suite.Ctx, lock.OwnerAddress())
-		// suite.Require().Equal(0, balances.Len())
-
-		// // test that synth lock finish does not mean underlying lock is finished
+		// test that synth lock finish does not mean underlying lock is finished
 		// suite.Ctx = suite.Ctx.WithBlockTime((startTime.Add(unbondingDuration)))
 		// suite.App.LockupKeeper.DeleteAllMaturedSyntheticLocks(suite.Ctx)
 		// suite.App.LockupKeeper.WithdrawAllMaturedLocks(suite.Ctx)
-		// _, err = suite.App.LockupKeeper.GetSyntheticLockup(suite.Ctx, lock.ID, keeper.UnstakingSyntheticDenom(lock.Coins[0].Denom, valAddr))
-		// suite.Require().Error(err)
-		// updatedLock, err = suite.App.LockupKeeper.GetLockByID(suite.Ctx, lock.ID)
-		// suite.Require().NoError(err)
-		// suite.Require().True(updatedLock.IsUnlocking())
-
-		// // test after SuperfluidUnbondLock + lockup unbonding duration, lock is finished and does not exist
-		// suite.Ctx = suite.Ctx.WithBlockTime(unbondLockStartTime.Add(unbondingDuration))
-		// suite.App.LockupKeeper.WithdrawAllMaturedLocks(suite.Ctx)
-		// _, err = suite.App.LockupKeeper.GetLockByID(suite.Ctx, lock.ID)
+		// _, err = suite.App.LockupKeeper.GetSyntheticLockup(suite.Ctx, newLockID, keeper.UnstakingSyntheticDenom(lock.Coins[0].Denom, valAddr))
 		// suite.Require().Error(err)
 
-		// // check if finished unlocking successfully increased balance
-		// balances = suite.App.BankKeeper.GetAllBalances(suite.Ctx, lock.OwnerAddress())
-		// suite.Require().Equal(1, balances.Len())
-		// suite.Require().Equal(denoms[0], balances[0].Denom)
-		// suite.Require().Equal(sdk.NewInt(1000000), balances[0].Amount)
+		// test after SuperfluidUnbondLock + lockup unbonding duration, lock is finished and does not exist
+		suite.Ctx = suite.Ctx.WithBlockTime(unbondLockStartTime.Add(unbondingDuration))
+		suite.App.LockupKeeper.WithdrawAllMaturedLocks(suite.Ctx)
+		_, err = suite.App.LockupKeeper.GetLockByID(suite.Ctx, newLockID)
+		suite.Require().Error(err)
 
-		// // check invariant is fine
-		// reason, broken := keeper.AllInvariants(*suite.App.SuperfluidKeeper)(suite.Ctx)
-		// suite.Require().False(broken, reason)
+		_, err = suite.App.LockupKeeper.GetLockByID(suite.Ctx, lock.ID)
+		suite.Require().NoError(err)
+
+		// check if finished unlocking successfully increased balance
+		balances := suite.App.BankKeeper.GetAllBalances(suite.Ctx, lock.OwnerAddress())
+		suite.Require().Equal(1, balances.Len())
+		suite.Require().Equal(denoms[0], balances[0].Denom)
+		suite.Require().Equal(unlockAmount, balances[0].Amount)
+
+		// check invariant is fine
+		reason, broken := keeper.AllInvariants(*suite.App.SuperfluidKeeper)(suite.Ctx)
+		suite.Require().False(broken, reason)
+
+		// TODO: test lock is not split if unlock amount == lock amount
+		// TODO: test superfluid undelegate and unbond lock again
+		unlockAmount = lock.Coins[0].Amount.Sub(unlockAmount)
+		lockID, err := suite.App.SuperfluidKeeper.SuperfluidUndelegateAndUnbondLock(suite.Ctx, lock.ID, lock.GetOwner(), unlockAmount)
+		suite.Require().NoError(err)
+		// lockID = lockID
+		suite.Require().Equal(lockID, lock.ID)
+
+		updatedLock, err = suite.App.LockupKeeper.GetLockByID(suite.Ctx, lockID)
+		suite.Require().NoError(err)
+		suite.Require().True(updatedLock.IsUnlocking())
+		suite.Require().Equal(updatedLock.Coins[0].Amount, unlockAmount)
 	}
-
-	// TODO: test superfluid undelegate and unbond lock again
 }
 
 func (suite *KeeperTestSuite) TestRefreshIntermediaryDelegationAmounts() {
