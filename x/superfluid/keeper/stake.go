@@ -288,6 +288,12 @@ func (k Keeper) SuperfluidUnbondLock(ctx sdk.Context, underlyingLockId uint64, s
 	return err
 }
 
+// TODO: comment
+// TODO: test
+func (k Keeper) SuperfluidUndelegateAndUnbondLock(ctx sdk.Context, lockID uint64, sender string, amount sdk.Int) (uint64, error) {
+	return 0, nil
+}
+
 // alreadySuperfluidStaking returns true if underlying lock used in superfluid staking.
 // This method would also return true for undelegating position for the lock.
 func (k Keeper) alreadySuperfluidStaking(ctx sdk.Context, lockID uint64) bool {

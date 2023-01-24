@@ -150,6 +150,42 @@ func (m MsgSuperfluidUnbondLock) GetSigners() []sdk.AccAddress {
 	return []sdk.AccAddress{sender}
 }
 
+// TODO: comment and test
+var _ sdk.Msg = &MsgSuperfluidUndelegateAndUnbondLock{}
+
+// MsgSuperfluidUndelegateAndUnbondLock creates a message to unbond a lock underlying a superfluid undelegation position.
+func NewMsgSuperfluidUndeledagetAndUnbondLock(sender sdk.AccAddress, lockID uint64, coin sdk.Coin) *MsgSuperfluidUndelegateAndUnbondLock {
+	return &MsgSuperfluidUndelegateAndUnbondLock{
+		Sender: sender.String(),
+		LockId: lockID,
+		Coin: coin,
+	}
+}
+
+func (m MsgSuperfluidUndelegateAndUnbondLock) Route() string { return RouterKey }
+func (m MsgSuperfluidUndelegateAndUnbondLock) Type() string {
+	return TypeMsgSuperfluidUndeledgateAndUnbondLock
+}
+
+func (m MsgSuperfluidUndelegateAndUnbondLock) ValidateBasic() error {
+	if m.Sender == "" {
+		return fmt.Errorf("sender should not be an empty address")
+	}
+	if m.LockId == 0 {
+		return fmt.Errorf("lockID should be set")
+	}
+	return nil
+}
+
+func (m MsgSuperfluidUndelegateAndUnbondLock) GetSignBytes() []byte {
+	return sdk.MustSortJSON(ModuleCdc.MustMarshalJSON(&m))
+}
+
+func (m MsgSuperfluidUndelegateAndUnbondLock) GetSigners() []sdk.AccAddress {
+	sender, _ := sdk.AccAddressFromBech32(m.Sender)
+	return []sdk.AccAddress{sender}
+}
+
 var _ sdk.Msg = &MsgLockAndSuperfluidDelegate{}
 
 // NewMsgLockAndSuperfluidDelegate creates a message to create a lockup lock and superfluid delegation.
